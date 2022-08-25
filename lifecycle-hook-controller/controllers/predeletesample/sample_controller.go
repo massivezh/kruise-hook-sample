@@ -60,18 +60,22 @@ func (r *SampleReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
 		return ctrl.Result{}, nil
 	}
 
-	{
-		// your hook logic here, e.g. call an external URL
+
+	var body string
+	// after hook succeeded:
+	if pod.Labels[kruiseappspub.LifecycleStateKey] == string(kruiseappspub.LifecycleStatePreparingUpdate) {
+		body = fmt.Sprintf(`{"metadata":{"labels":{"%s":"false"}}}`, hookLabelKey)
+		r.Log.Info(" inplace-update hook: PreparingUpdate", "pod", req.NamespacedName)
+	} else if pod.Labels[kruiseappspub.LifecycleStateKey] == string(kruiseappspub.LifecycleStateUpdated) {
+		body = fmt.Sprintf(`{"metadata":{"labels":{"%s":"true"}}}`, hookLabelKey)
+		r.Log.Info(" inplace-update hook: Updated", "pod", req.NamespacedName)
 	}
 
-	// after hook succeeded:
-	body := fmt.Sprintf(`{"metadata":{"labels":{"%s":"false"}}}`, hookLabelKey)
 	if err := r.Patch(context.TODO(), pod, client.RawPatch(types.StrategicMergePatchType, []byte(body))); err != nil {
 		r.Log.Error(err, "failed to patch", "pod", req.NamespacedName)
 		return ctrl.Result{}, err
 	}
 
-	r.Log.Info("Successfully handle pre-delete hook", "pod", req.NamespacedName)
 	return ctrl.Result{}, nil
 }
 
@@ -95,5 +99,6 @@ func (r *SampleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func isPreDeleteHooked(pod *v1.Pod) bool {
-	return pod.Labels[kruiseappspub.LifecycleStateKey] == string(kruiseappspub.LifecycleStatePreparingDelete) && pod.Labels[hookLabelKey] == "true"
+	return (pod.Labels[kruiseappspub.LifecycleStateKey] == string(kruiseappspub.LifecycleStatePreparingUpdate) && pod.Labels[hookLabelKey] == "true") ||
+		(pod.Labels[kruiseappspub.LifecycleStateKey] == string(kruiseappspub.LifecycleStateUpdated) && pod.Labels[hookLabelKey] == "false")
 }
